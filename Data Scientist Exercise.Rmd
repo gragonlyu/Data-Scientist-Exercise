@@ -1,0 +1,228 @@
+---
+title: "Data Scientist Exercise: Working with a beer review dataset using R"
+author: "Jin-Long Lyu"
+date: "March 17, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width=20, fig.height=8) 
+library(knitr)
+library(kableExtra)
+require(dplyr)
+library(ggplot2)
+require(gridExtra)
+setwd("./Data-Scientist-Exercise/")
+untar("./beer_reviews/beer_reviews.tar.gz",files="beer_reviews")
+data <- na.omit(read.csv("./beer_reviews/beer_reviews.csv",encoding = 'UTF-8',colClasses =c('character','character',"integer","numeric","numeric","numeric",'character','character',"numeric","numeric",'character',"numeric",'character')))
+
+```
+
+## Introduction
+
+This notebook includes a data analytics report based on the Beer Reviews dataset using Python. In this notebook you will see:
+
+1. Which brewery produces the strongest beers by ABV%?
+2. If I had to pick 3 beers to recommend using only this data, which would I pick?
+3. Which of the factors (aroma, taste, appearance, palette) are most important in determining the overall quality of a beer?
+4. Lastly, if I typically enjoy a beer due to its aroma and appearance, which beer style should I try?
+
+## Beer Reviews Dataset
+
+This tabular data consists of approximately 1.5 million beer reviews from Beer Advocate, and reviewers evaluated beers in term of aroma, appearance, palate and taste in a scale of 0 - 5 points (decimal accepted).
+
+## Data at a glance
+
+Showing the firtst 5 rows of data
+
+```{r data}
+kable(head(data,5)) %>%
+   kable_styling(bootstrap_options = c("striped", "hover","bordered"), position = "center" ) %>% row_spec(0,background= "#F6D08A",color='#DF6002')
+```
+```{r}
+dtypes<- data.frame(sapply(data, class))
+dtypes <- cbind(newColName = rownames(dtypes), dtypes)
+rownames(dtypes) <- 1:nrow(dtypes)
+colnames(dtypes)<-c('Column Name','Data Type')
+kable(dtypes) %>%
+   kable_styling(bootstrap_options = c("striped", "hover","bordered"), position = "center" ) %>% row_spec(0,background= "#F6D08A",color='#DF6002')
+
+```
+
+## 1. Which brewery produces the strongest beers by ABV%?
+
+The brewery that produces the strongest beers is Schorschbrau.
+
+Aggregate data by each brewery and get the maximum value of ABV% for each brewery, and then sort this output by each brewery's highest ABV% to find out which brewery produces the strongest beers by ABV%. Finally, we visualize the output by plotting a bar chart showing top 3 brewery with highest ABV% in descending order:
+
+1. Schorschbrau
+2. BrewDog
+3. De Struise Brouwers
+4. Hair of the Dog Brewing Company / Brewery and Tasting Room
+5. Boston Beer Company (Samuel Adams)
+
+```{r}
+data1.1 <- data.frame(data %>% group_by(brewery_name) %>% summarise(beer_abv = max(beer_abv)))
+data1.1 <- data1.1[order(data1.1[,'beer_abv'],decreasing = TRUE),][1:10,]
+kable(data1.1) %>%
+   kable_styling(bootstrap_options = c("striped", "hover","bordered"), position = "center")%>% row_spec(0,background= "#F6D08A",color='#DF6002')%>% row_spec(1,background= "yellow")
+```
+
+```{r,include=FALSE}
+fig1.1 <- ggplot(data=data1.1, aes(y=beer_abv, x=brewery_name)) +
+  geom_bar(stat="identity", fill="#F8A663")+
+     geom_bar(data=subset(data1.1, beer_abv==max(beer_abv)), aes(brewery_name, beer_abv),fill="#FA7406", stat="identity") + geom_text(aes(label=beer_abv), hjust=2,vjust=0.5, color="white", size=5) + coord_flip()+theme_minimal() + ggtitle('Strongest Beer by Brewery',subtitle = 'Figure 1.1')+ theme_bw(base_size=20) + theme(plot.title = element_text(size=rel(1.5)),axis.text=element_text(size=rel(1.05)),axis.title =element_text(size=rel(1.2)))
+```
+```{r}
+fig1.1
+```
+
+## 2. Best Beers: Personally Recommended
+
+For me to define the perfect beer that I enjoy drinking the most, I really prefer the one that is not so strong; ideally, 5% to 10% of ABV% is the best. On top of that, the best beer is dominant in terms of overall review score and the popularity (number of reviews), and last but not least, the beer is from the most reputational brewery.
+
+My condictions of best beers are shown as the following:
+
+1. Beers ABV% is between 5%  to 10%  (Fig. 2.1)
+
+2. Popular beers whose number of reviews is 90th percentile and review overall score is 70th percentile (Fig. 2.2)
+
+3. Most reputational brewery whose review overall score is 90th percentile and number of reviews is above average (Fig. 2.3)
+
+```{r }
+
+# get a list of beers whose ABV% is between 5% to 10%
+lower_abv <- 5
+higher_abv <- 10
+cond1_beers <- data[ which(data$beer_abv>=lower_abv&data$beer_abv<=higher_abv),]
+
+# get a list of beers whose review count is higher than the data population average
+p2_c <- 0.9
+p2_m <- 0.7
+agg2 <- data.frame(data %>% group_by(brewery_name,beer_name,beer_abv) %>% summarize(count=n(),mean=mean(review_overall)))
+thresh2_c <- quantile(agg2$count,p2_c)
+thresh2_m <- quantile(agg2$mean,p2_m)
+cond2_beer <- agg2[which(agg2$count>thresh2_c & agg2$mean>thresh2_m),]
+
+# get a list of reputational brewery that have above-average review counts (popularity) and its average review scores is among the top 10% in the population
+p3 <- 0.9
+agg3 <- data.frame(data %>% group_by(brewery_name) %>% summarize(count=n(),mean=mean(review_overall)))
+thresh3_c <- mean(agg3$count)
+thresh3_m <- quantile(agg3$mean,p3)
+reputational_brewery <- agg3[which(agg3$count>thresh3_c & agg3$mean>thresh3_m),'brewery_name']
+
+fig2.1_df <- data.frame(group=c('Below 5%', '5% - 10%', 'Above 10%'),value=c(dim(data[which(data$beer_abv<lower_abv),])[1]/dim(data)[1],dim(cond1_beers)[1]/dim(data)[1],dim(data[which(data$beer_abv>higher_abv),])[1]/dim(data)[1]))
+
+fig2.1 <- ggplot(fig2.1_df, aes(x="", y=value, fill=group))+
+geom_bar(width = 1, stat = "identity") + geom_col() + geom_text(aes(label = scales::percent(round(value,3))), position = position_stack(vjust = 0.5))+
+   coord_polar(theta = "y") +
+   theme_void() + ggtitle('How ABV% is distributed in data?',subtitle = 'Figure 2.1')
+
+fig2.2 <- ggplot(agg2,aes(y=mean,x=count)) + geom_point(color="red") +  ggtitle('Number of Reviews v.s. Review Scores (Per Beer)',subtitle = 'Figure 2.2') + theme_minimal() +
+  xlab("Number of Review") + ylab('Review Score') + geom_hline(yintercept=thresh2_m)+ geom_vline(xintercept=thresh2_c) +
+     annotate("rect", xmin = thresh2_c, xmax = 3500, ymin = thresh2_m, ymax = 5,alpha = .3,color='blue')
+
+fig2.3 <- ggplot(agg3,aes(y=mean,x=count)) + geom_point(color="blue") +  ggtitle('Which brewery is most reputational?',subtitle = 'Figure 2.3') + theme_minimal() +
+  xlab("Number of Review") + ylab('Review Score') + geom_hline(yintercept=thresh3_m)+ geom_vline(xintercept=thresh3_c) +
+     annotate("rect", xmin = thresh3_c, xmax = 40000, ymin = thresh3_m, ymax = 5,alpha = .3,color='blue')
+
+```
+```{r}
+grid.arrange(fig2.1, fig2.2,fig2.3, nrow = 1)
+```
+
+Generating the list of best beers and selecting top 3 beers (based on review score):
+
+Best Beer No.1 : Armand'4 Oude Geuze Lente (Spring) (Brouwerij Drie Fonteinen)
+
+Best Beer No.2 : Hoppy Birthday (Alpine Beer Company)
+
+Best Beer No.3 : Cantillon Blabaer Lambik (Brasserie Cantillon)
+```{r}
+cond2_beer <- cond2_beer %>% mutate_at(vars(starts_with("mean")), funs(round(., 2)))
+beers <- cond2_beer[order(cond2_beer$mean,cond2_beer$count,decreasing = TRUE),]
+
+recommenedBeers <- list()
+recommenedBeersDF <- data.frame(matrix(ncol = 4, nrow = 0))
+colnames(recommenedBeersDF) <- c('Beer','Brewery','Review Score (Overall)','Beer ABV%')
+l <- 0
+idx <- 1
+while (l != 3 & idx <= dim(beers)[1]){
+  beer = beers[idx,'beer_name']
+  brewery = beers[idx,'brewery_name']
+  RS <- beers[idx,'mean']
+  beer_abv <- beers[idx,'beer_abv']
+  if(brewery %in% reputational_brewery & beer %in% unique(cond1_beers[,'beer_name'])){
+    s <- sprintf('Best Beer No.%s :%s (%s)',l+1,beer,brewery)
+    print(s)
+    recommenedBeers[l+1] = s
+    recommenedBeersDF[l+1,]=c(beer,brewery,RS,beer_abv)
+    l<- length(recommenedBeers) 
+  }
+  idx <- idx+1
+}
+kable(recommenedBeersDF) %>%
+   kable_styling(bootstrap_options = c("striped", "hover","bordered"), position = "center")%>% row_spec(0,background= "#F6D08A",color='#DF6002')%>% row_spec(1,background= "yellow")
+  
+```
+## 3. Which of the factors (aroma, taste, appearance, palette) are most important in determining the overall quality of a beer?
+
+In terms of a good quality of a beer, let's assume the review overall score in data represents the overall quality of beers. Now that we already have data representing the overall quality of beers, the next thing that we are wondering now is that which one of these factors(aroma, taste, appearance & palette) is most important in affecting the scoring of the review overall variable (dependent variable).
+
+One way to figure out the relationships between each of thsee variables and its dependent variable, we can fit a linear regression model and compare some of the crucial statistics, such as R-squared and regression coefficients, to find out the answer for us.
+
+# Method 1: Comparing the coefficients
+
+After fitting a linear regression model, we can observe that review_taste has the highest values of coefficient among all variables, which implies that review_taste is the most important variable in determining the values of the review overall score; in other words, it is the most important factor in determining a good quality of a beer.
+
+Result: taste -> palate -> appearance -> aroma (importance from high to low)
+
+```{r}
+lm1 <- lm(review_overall~review_aroma+review_appearance+review_palate+review_taste,data = data)
+lm1.summary <- summary(lm1)
+lm1.summary 
+```
+note: in order to ensure we can compare the coefficients without problem, we need to know that aroma, taste, appearance, palette and overall score use the same scale (0 to 5).
+
+# Method 2: Comparing the Values of R-Squared
+
+We can also identify the most important feature by looking at the increase in R-squared when each variable is added to a model that already contains all of the other variables. It is obvious that review_taste has the highest increase in R-squared, which can be interpreted that it is the most important variable in determining good qaulity of beers just like method 1.
+
+Result: taste -> palate -> appearance -> aroma (importance from high to low)
+
+```{r}
+r2_df <- data.frame(matrix(ncol = 3, nrow = 0))
+colnames(r2_df) <- c('Variable','R-Squared With All Other Variables','R-Squared Incresae')
+r2 <- lm1.summary$r.squared
+data.3 <- data[,c('review_aroma', 'review_appearance','review_palate', 'review_taste','review_overall')]
+idx<-1
+for (drop in c('review_aroma', 'review_appearance','review_palate', 'review_taste')){
+  data.loop<-data.3[,!(names(data.3)%in%drop)]
+  lm.loop<-lm(review_overall~.,data = data.loop)
+  lm.loop.summary <- summary(lm.loop)
+  r2_df[idx,]=c(drop,round(lm.loop.summary$r.squared,4),round((r2-lm.loop.summary$r.squared),4))
+  idx <- idx+1
+}
+kable(r2_df[order(r2_df$`R-Squared With All Other Variables`,decreasing = FALSE),]) %>%
+   kable_styling(bootstrap_options = c("striped", "hover","bordered"), position = "center")%>% row_spec(0,background= "#F6D08A",color='#DF6002')%>% row_spec(1,background= "yellow")
+
+```
+
+## 4. Lastly, if I typically enjoy a beer due to its aroma and appearance, which beer style should I try?
+
+Let's assume if a beer has the best aroma and appearance scores, then it'd score high in the review data (specifically review_aroma and review_appearance), and we can then compute the combined score of aroma and appearance by taking their mean. After sorting the result, it is observed that American Double / Imperial Stout is the most ideal beer style to try for it has the highest combined score of aroma and appearance.
+
+```{r,include=FALSE}
+bs_df <- data %>% group_by(beer_style) %>% summarize(review_aroma = round(mean(review_aroma),3),review_appearance = round(mean(review_appearance),3))
+bs_df[,'Combined_Scores'] <- round((bs_df$review_aroma + bs_df$review_appearance)/2,2)
+bs_df <- bs_df[order(bs_df$Combined_Scores,decreasing = TRUE),][1:10,]
+fig4.1 <- ggplot(data=bs_df, aes(y=Combined_Scores, x=beer_style)) +
+  geom_bar(stat="identity", fill="#F8A663")+
+     geom_bar(data=subset(bs_df, Combined_Scores==max(Combined_Scores)), aes(beer_style, Combined_Scores),fill="#FA7406", stat="identity") + geom_text(aes(label=Combined_Scores), hjust=2,vjust=0.5, color="white", size=5) + coord_flip()+theme_minimal() + ggtitle('Most recommended beer style\n(by aroma & appearance',subtitle = 'Figure 4.1')+ theme_bw(base_size=20) + theme(plot.title = element_text(size=rel(1.5)),axis.text=element_text(size=rel(1.05)),axis.title =element_text(size=rel(1.2))) 
+```
+
+```{r}
+fig4.1
+```
+
